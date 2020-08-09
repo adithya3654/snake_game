@@ -1,0 +1,184 @@
+import simplegui
+import random
+
+
+class Direction(object):
+    UP, DOWN, LEFT, RIGHT = range(4)
+    
+class GameState(object):
+    RUNNING, FINISHED = range(2)
+
+class Snake(object):
+    def __init__(self, no_of_segments=10):
+        self.segment_size = 15
+        self.thickness = 10
+        self.color = 'Orange'
+        self.segments = [(100, 200 + (self.segment_size * i)) for i in range(1, no_of_segments+1)]
+        self.directions = [Direction.UP]
+    
+    def react(self, key):
+        self.change_direction(key)
+            
+    def has_bitten_itself(self):
+        head = self.head()
+        rest = self.segments[1:]
+        return head in rest
+    
+    def has_eaten(self, food):
+        head_x, head_y = self.head()
+        return (abs(head_x - food.x) <= 15 and
+                abs(head_y - food.y) <= 15)
+    
+    def _move(self, direction):
+        x, y = self.segments[0]
+        if direction == Direction.UP:
+            y -= self.segment_size
+        elif direction == Direction.DOWN:
+            y += self.segment_size
+        elif direction == Direction.LEFT:
+            x -= self.segment_size
+        elif direction == Direction.RIGHT:
+            x += self.segment_size
+        self.segments.insert(0, (x, y))
+        
+    def move(self):
+        direction = self.directions[0]
+        self._move(direction)
+        self.segments.pop()
+        if len(self.directions) > 1:
+            self.directions = self.directions[1:]
+
+    def grow(self):
+        direction = self.directions[0]
+        self._move(direction)
+        if len(self.directions) > 1:
+            self.directions = self.directions[1:]
+
+    def change_direction(self, key):
+        # buffer upto 5 valid direction changes. discard others
+        if len(self.directions) < 5:
+            if (key == simplegui.KEY_MAP['left'] and 
+                self.directions[-1] != Direction.RIGHT):
+                self.directions.append(Direction.LEFT)
+            elif (key == simplegui.KEY_MAP['right'] and 
+                  self.directions[-1] != Direction.LEFT):
+                self.directions.append(Direction.RIGHT)
+            elif (key == simplegui.KEY_MAP['up'] and 
+                  self.directions[-1] != Direction.DOWN):
+                self.directions.append(Direction.UP)
+            elif (key == simplegui.KEY_MAP['down'] and 
+                  self.directions[-1] != Direction.UP):
+                self.directions.append(Direction.DOWN)
+    
+    def is_nearby(self, point):
+        x , y = point
+        result = False
+        for segment in self.segments:
+            s_x, s_y = segment
+            if (abs(s_x - x) <= 15 and
+                abs(s_y - y) <= 15):
+                result = True
+                break
+        return result
+    
+    def head(self):
+        return self.segments[0]
+        
+    def render(self, canvas):
+        canvas.draw_polyline(self.segments, 
+                             self.thickness, 
+                             self.color)
+        #canvas.draw_text('Snake :%s, %s' % self.head(), (200, 200), 10, 'Yellow')
+ 
+class Food(object):
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.color = 'Blue'
+        self.size = 7
+      
+    def render(self, canvas):
+        canvas.draw_circle((self.x, self.y), 
+                           self.size, 1, self.color, self.color)
+        #canvas.draw_text('Food :%s, %s' % (self.x, self.y), (400, 420), 10, 'Orange')
+        
+
+class SnakeGame(object):        
+    def __init__(self):
+        self.snake = Snake()
+        self.game_state = GameState.RUNNING
+        self.h = 500
+        self.w = 600
+
+        self.score = 0
+        self.game_speed = 100 # ms/tick
+        # Create a frame and assign callbacks to event handlers
+        self.frame = simplegui.create_frame("Snake Game", 
+                                            self.w, self.h)
+        self.frame.set_draw_handler(self.render)
+        self.frame.set_keydown_handler(self.key_handler)
+        
+        self.timer = simplegui.create_timer(self.game_speed, 
+                                            self.tick)
+        
+        # Start the frame animation
+        self.frame.start()
+        self.timer.start()
+        
+        # add food
+        self.place_food()
+
+    def place_food(self):
+        x = random.randrange(1, self.w)
+        y = random.randrange(1, self.h)
+        food_location = (x, y)
+        if self.snake.is_nearby(food_location):
+            self.place_food()
+        else:
+            self.food = Food(x, y)
+        
+    def has_collided(self):
+        x, y = self.snake.head()
+        return x < 0 or y < 0 or x > self.w or y > self.h
+
+    def game_over(self):
+        self.timer.stop()
+        self.game_state = GameState.FINISHED
+        
+    def reset_game(self):
+        self.snake = Snake()
+        self.game_state = GameState.RUNNING
+        self.score = 0
+        self.timer.start()
+        self.place_food()
+    
+    # Handler to render on canvas
+    def render(self, canvas):
+        if self.game_state == GameState.FINISHED:
+            canvas.draw_text('Game Over. Press spacebar to restart', (self.w/4, self.h/2), 20, 'Red')
+
+        self.snake.render(canvas)
+        self.food.render(canvas)
+        # score
+        canvas.draw_text('Score : %s' % self.score, (10, 15), 20, 'White')
+        #canvas.draw_text('Directions : %s' % str(self.snake.directions), (10, 35), 20, 'White')
+    
+    def tick(self):
+        if self.has_collided() or self.snake.has_bitten_itself():
+            self.game_over()
+        elif self.snake.has_eaten(self.food):
+            self.place_food()
+            self.snake.grow()
+            self.score += 10
+        else:
+            self.snake.move()
+    
+    def key_handler(self, key):
+        if self.game_state == GameState.RUNNING:
+            self.snake.react(key)
+        else:
+            if key == simplegui.KEY_MAP['space']:
+                self.reset_game()
+
+# Run
+SnakeGame()
